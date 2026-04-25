@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hand Tracking Demos</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0a0a0f;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+    }
+
+    header {
+      padding: 2rem;
+      text-align: center;
+      border-bottom: 1px solid #1a1a2e;
+    }
+
+    header h1 {
+      font-size: clamp(1.5rem, 4vw, 2.5rem);
+      font-weight: 700;
+      background: linear-gradient(135deg, #00d4ff, #7b2fff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: -0.5px;
+    }
+
+    header p {
+      color: #555;
+      margin-top: 0.5rem;
+      font-size: 0.95rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+      padding: 2rem;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: #111118;
+      border: 1px solid #1e1e2e;
+      border-radius: 16px;
+      padding: 2rem;
+      cursor: pointer;
+      transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+      text-decoration: none;
+      color: inherit;
+      display: block;
+    }
+
+    .card:hover {
+      border-color: #00d4ff44;
+      transform: translateY(-3px);
+      box-shadow: 0 8px 32px #00d4ff11;
+    }
+
+    .card-icon { font-size: 2.5rem; margin-bottom: 1rem; }
+
+    .card h2 {
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: #fff;
+    }
+
+    .card p { font-size: 0.88rem; color: #666; line-height: 1.6; }
+
+    .badge {
+      display: inline-block;
+      margin-top: 1rem;
+      padding: 0.25rem 0.75rem;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      background: #00d4ff15;
+      color: #00d4ff;
+      border: 1px solid #00d4ff33;
+    }
+
+    footer {
+      text-align: center;
+      padding: 2rem;
+      color: #333;
+      font-size: 0.8rem;
+    }
+
+    @media (max-width: 480px) {
+      .grid { padding: 1rem; gap: 1rem; }
+      header { padding: 1.5rem 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Hand Tracking Demos</h1>
+    <p>MediaPipe.js &middot; Corre 100% en tu browser &middot; Sin instalaci&oacute;n</p>
+  </header>
+
+  <div class="grid">
+
+    <a class="card" href="demos/visualizer.html">
+      <div class="card-icon">✋</div>
+      <h2>Hand Visualizer</h2>
+      <p>Ve los 21 puntos de tu mano en tiempo real. Skeleton, landmarks y detecci&oacute;n de hasta 2 manos simult&aacute;neas.</p>
+      <span class="badge">Demo 1</span>
+    </a>
+
+    <a class="card" href="demos/finger-counter.html">
+      <div class="card-icon">🖐</div>
+      <h2>Finger Counter</h2>
+      <p>Cuenta los dedos levantados en tiempo real y reconoce gestos: pulgar arriba, paz, rock, ok y m&aacute;s.</p>
+      <span class="badge">Demo 2</span>
+    </a>
+
+    <a class="card" href="demos/air-canvas.html">
+      <div class="card-icon">✏️</div>
+      <h2>Air Canvas</h2>
+      <p>Dibuja en el aire con tu dedo &iacute;ndice. Cambia colores con gestos. Pu&ntilde;o cerrado para borrar.</p>
+      <span class="badge">Demo 3</span>
+    </a>
+
+  </div>
+
+  <footer>Powered by MediaPipe Tasks Vision &middot; jonathansp91</footer>
+
+</body>
+</html>

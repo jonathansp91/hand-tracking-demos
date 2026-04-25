@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Air Canvas</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0a0f; color: #e0e0e0; font-family: system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+    nav {
+      padding: 0.75rem 1.25rem;
+      display: flex; align-items: center; gap: 1rem;
+      border-bottom: 1px solid #1e1e2e; flex-shrink: 0;
+    }
+    nav a { color: #555; text-decoration: none; font-size: 0.85rem; }
+    nav a:hover { color: #00d4ff; }
+    nav h2 { font-size: 1rem; font-weight: 600; color: #fff; flex: 1; }
+
+    .stage { flex: 1; position: relative; overflow: hidden; }
+
+    #video {
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%; object-fit: cover;
+      transform: scaleX(-1);
+      opacity: 0.35;
+    }
+
+    #drawing { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); }
+    #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); }
+
+    .toolbar {
+      position: absolute;
+      bottom: 1.25rem; left: 50%;
+      transform: translateX(-50%);
+      display: flex; gap: 0.75rem; align-items: center;
+      background: #0a0a0fcc;
+      border: 1px solid #1e1e2e;
+      border-radius: 40px;
+      padding: 0.5rem 1rem;
+      backdrop-filter: blur(8px);
+    }
+
+    .color-dot {
+      width: 28px; height: 28px; border-radius: 50%;
+      cursor: pointer; border: 2px solid transparent;
+      transition: transform 0.15s, border-color 0.15s;
+    }
+    .color-dot.active { border-color: #fff; transform: scale(1.25); }
+
+    .sep { width: 1px; height: 20px; background: #222; }
+
+    .tool-btn {
+      background: transparent; border: 1px solid #333;
+      color: #aaa; padding: 0.3rem 0.75rem;
+      border-radius: 20px; font-size: 0.75rem; cursor: pointer;
+    }
+    .tool-btn:hover { border-color: #00d4ff44; color: #00d4ff; }
+
+    .hud {
+      position: absolute; top: 1rem; right: 1rem;
+      background: #0a0a0fcc; border: 1px solid #1e1e2e;
+      border-radius: 12px; padding: 0.75rem 1rem;
+      font-size: 0.78rem; backdrop-filter: blur(8px);
+      color: #555; line-height: 1.8;
+    }
+
+    .hud span { color: #00d4ff; }
+
+    .cursor-dot {
+      position: absolute;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      transition: background 0.1s;
+      border: 2px solid rgba(255,255,255,0.5);
+      z-index: 10;
+    }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <a href="../index.html">&#8592; Demos</a>
+    <h2>Air Canvas</h2>
+  </nav>
+
+  <div class="stage" id="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="drawing"></canvas>
+    <canvas id="overlay"></canvas>
+    <div class="cursor-dot" id="cursorDot"></div>
+
+    <div class="hud">
+      Modo: <span id="modeLabel">Dibujar</span><br>
+      Indice arriba + medio abajo = dibujar<br>
+      Puno cerrado = borrar<br>
+      Palma abierta = pausa
+    </div>
+
+    <div class="toolbar">
+      <div class="color-dot active" style="background:#00d4ff" data-color="#00d4ff"></div>
+      <div class="color-dot" style="background:#ff4466" data-color="#ff4466"></div>
+      <div class="color-dot" style="background:#44ff88" data-color="#44ff88"></div>
+      <div class="color-dot" style="background:#ffcc00" data-color="#ffcc00"></div>
+      <div class="color-dot" style="background:#cc44ff" data-color="#cc44ff"></div>
+      <div class="color-dot" style="background:#ffffff" data-color="#ffffff"></div>
+      <div class="sep"></div>
+      <button class="tool-btn" id="clearBtn">Limpiar</button>
+    </div>
+  </div>
+
+  <script type="module">
+    import { HandLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs';
+
+    const video     = document.getElementById('video');
+    const drawing   = document.getElementById('drawing');
+    const overlay   = document.getElementById('overlay');
+    const dCtx      = drawing.getContext('2d');
+    const oCtx      = overlay.getContext('2d');
+    const modeLabel = document.getElementById('modeLabel');
+    const cursorDot = document.getElementById('cursorDot');
+    const clearBtn  = document.getElementById('clearBtn');
+
+    let landmarker, color = '#00d4ff', prevX = null, prevY = null;
+
+    document.querySelectorAll('.color-dot').forEach(dot => {
+      dot.onclick = () => {
+        document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
+        dot.classList.add('active');
+        color = dot.dataset.color;
+      };
+    });
+
+    clearBtn.onclick = () => dCtx.clearRect(0, 0, drawing.width, drawing.height);
+
+    function resize() {
+      const stage = document.getElementById('stage');
+      drawing.width  = overlay.width  = stage.clientWidth;
+      drawing.height = overlay.height = stage.clientHeight;
+    }
+
+    window.addEventListener('resize', resize);
+
+    function isFingerUp(lm, tip, joint) { return lm[tip].y < lm[joint].y; }
+
+    function getMode(lm) {
+      const indexUp  = isFingerUp(lm, 8, 6);
+      const middleUp = isFingerUp(lm, 12, 10);
+      const ringUp   = isFingerUp(lm, 16, 14);
+      const pinkyUp  = isFingerUp(lm, 20, 18);
+      const thumbUp  = lm[4].x < lm[3].x;
+
+      if (indexUp && middleUp && ringUp && pinkyUp) return 'pause';
+      if (!indexUp && !middleUp && !ringUp && !pinkyUp) return 'erase';
+      if (indexUp && !middleUp) return 'draw';
+      return 'pause';
+    }
+
+    async function init() {
+      resize();
+      const vision = await FilesetResolver.forVisionTasks(
+        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
+      );
+      landmarker = await HandLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+          delegate: 'GPU'
+        },
+        runningMode: 'VIDEO',
+        numHands: 1
+      });
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
+      });
+      video.srcObject = stream;
+      await new Promise(r => video.onloadedmetadata = r);
+      requestAnimationFrame(detect);
+    }
+
+    function detect(now) {
+      requestAnimationFrame(detect);
+      if (video.readyState < 2) return;
+
+      oCtx.clearRect(0, 0, overlay.width, overlay.height);
+
+      const result = landmarker.detectForVideo(video, now);
+      const hands  = result.landmarks || [];
+
+      if (hands.length === 0) {
+        prevX = prevY = null;
+        cursorDot.style.display = 'none';
+        modeLabel.textContent = 'Sin mano';
+        return;
+      }
+
+      const lm   = hands[0];
+      const mode = getMode(lm);
+
+      // Coordenadas del dedo índice tip en el canvas (espejado)
+      const rawX = lm[8].x * overlay.width;
+      const rawY = lm[8].y * overlay.height;
+      // El canvas está scaleX(-1) entonces la posición visual es overlay.width - rawX
+      const visX = overlay.width - rawX;
+      const visY = rawY;
+
+      cursorDot.style.display = 'block';
+      cursorDot.style.left = visX + 'px';
+      cursorDot.style.top  = visY + 'px';
+      cursorDot.style.background = mode === 'draw' ? color : mode === 'erase' ? '#ff4444' : '#ffffff44';
+
+      if (mode === 'draw') {
+        modeLabel.textContent = 'Dibujando';
+        if (prevX !== null) {
+          dCtx.beginPath();
+          dCtx.moveTo(prevX, prevY);
+          dCtx.lineTo(rawX, rawY);
+          dCtx.strokeStyle = color;
+          dCtx.lineWidth   = 4;
+          dCtx.lineCap     = 'round';
+          dCtx.lineJoin    = 'round';
+          dCtx.stroke();
+        }
+        prevX = rawX; prevY = rawY;
+
+      } else if (mode === 'erase') {
+        modeLabel.textContent = 'Borrando';
+        dCtx.clearRect(rawX - 30, rawY - 30, 60, 60);
+        oCtx.beginPath();
+        oCtx.arc(rawX, rawY, 30, 0, Math.PI * 2);
+        oCtx.strokeStyle = '#ff444488';
+        oCtx.lineWidth = 2;
+        oCtx.stroke();
+        prevX = prevY = null;
+
+      } else {
+        modeLabel.textContent = 'Pausado';
+        prevX = prevY = null;
+      }
+
+      // Skeleton sutil
+      const CONN = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12]];
+      CONN.forEach(([a, b]) => {
+        oCtx.beginPath();
+        oCtx.moveTo(lm[a].x * overlay.width, lm[a].y * overlay.height);
+        oCtx.lineTo(lm[b].x * overlay.width, lm[b].y * overlay.height);
+        oCtx.strokeStyle = 'rgba(0,212,255,0.25)';
+        oCtx.lineWidth = 1.5;
+        oCtx.stroke();
+      });
+    }
+
+    init().catch(console.error);
+  </script>
+</body>
+</html>
