@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hand Piano</title>
+  <link rel="stylesheet" href="_common.css" />
+</head>
+<body>
+  <nav>
+    <a href="../index.html">&#8592; Demos</a>
+    <h2>Hand Piano</h2>
+  </nav>
+
+  <div class="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="fx"></canvas>
+    <div class="hud">5 teclas <span>flotantes</span><br>Toca con cualquier dedo<br>Mano arriba = octava +1</div>
+    <div class="status" id="status">Cargando...</div>
+  </div>
+
+  <script type="module">
+    import { setupHandTracker, setupCamera } from './_common.js';
+
+    const video  = document.getElementById('video');
+    const canvas = document.getElementById('fx');
+    const ctx    = canvas.getContext('2d');
+    const status = document.getElementById('status');
+
+    let audioCtx;
+    function ensureAudio() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    }
+
+    function playNote(freq, vol = 0.3) {
+      ensureAudio();
+      const t = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(vol, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(t); osc.stop(t + 0.7);
+    }
+
+    document.addEventListener('click', ensureAudio, { once: true });
+
+    // Notas (Do mayor): C, D, E, F, G
+    const NOTES_LOW  = [261.63, 293.66, 329.63, 349.23, 392.00];
+    const NOTES_HIGH = [523.25, 587.33, 659.25, 698.46, 783.99];
+    const KEY_NAMES  = ['C', 'D', 'E', 'F', 'G'];
+    const KEY_HUES   = [0, 60, 120, 200, 280];
+
+    const TIPS = [4, 8, 12, 16, 20];
+    const lastTrigger = {}; // key -> timestamp para evitar retriggers rápidos
+
+    let landmarker;
+    async function init() {
+      landmarker = await setupHandTracker(2);
+      await setupCamera(video);
+      status.textContent = 'Click en la pantalla, luego toca las teclas';
+      requestAnimationFrame(loop);
+    }
+
+    function getKeys(width, height) {
+      // 5 zonas verticales en la parte inferior
+      const zoneW = width / 5;
+      const top   = height * 0.55;
+      const bot   = height;
+      return KEY_NAMES.map((name, i) => ({
+        name, hue: KEY_HUES[i],
+        x: i * zoneW, y: top,
+        w: zoneW, h: bot - top,
+        active: 0
+      }));
+    }
+
+    function loop(now) {
+      requestAnimationFrame(loop);
+      if (video.readyState < 2) return;
+
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const keys = getKeys(canvas.width, canvas.height);
+      const result = landmarker.detectForVideo(video, now);
+      const hands  = result.landmarks || [];
+
+      // Detectar fingertips dentro de cada zona
+      hands.forEach(lm => {
+        const handY = lm[0].y; // wrist y para octava
+        const highOctave = handY < 0.4;
+        const noteSet = highOctave ? NOTES_HIGH : NOTES_LOW;
+
+        TIPS.forEach(t => {
+          const px = lm[t].x * canvas.width;
+          const py = lm[t].y * canvas.height;
+          keys.forEach((k, i) => {
+            if (px >= k.x && px < k.x + k.w && py >= k.y && py < k.y + k.h) {
+              const triggerKey = `${i}_${highOctave ? 'h' : 'l'}`;
+              if (!lastTrigger[triggerKey] || now - lastTrigger[triggerKey] > 350) {
+                playNote(noteSet[i]);
+                lastTrigger[triggerKey] = now;
+                k.active = 1;
+              }
+            }
+          });
+        });
+      });
+
+      // Dibujar las teclas
+      keys.forEach((k, i) => {
+        const alpha = 0.2 + k.active * 0.5;
+        ctx.fillStyle = `hsla(${k.hue}, 90%, 55%, ${alpha})`;
+        ctx.fillRect(k.x + 2, k.y, k.w - 4, k.h);
+
+        ctx.strokeStyle = `hsla(${k.hue}, 90%, 70%, 0.8)`;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(k.x + 2, k.y, k.w - 4, k.h);
+
+        // Label invertido (porque el canvas está espejado)
+        ctx.save();
+        ctx.scale(-1, 1);
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 32px system-ui';
+        ctx.textAlign = 'center';
+        ctx.fillText(k.name, -(k.x + k.w / 2), k.y + k.h / 2 + 12);
+        ctx.restore();
+
+        k.active *= 0.85;
+      });
+
+      // Tip arriba para todos los fingertips
+      hands.forEach(lm => {
+        TIPS.forEach(t => {
+          const px = lm[t].x * canvas.width;
+          const py = lm[t].y * canvas.height;
+          ctx.fillStyle = '#00d4ff';
+          ctx.beginPath();
+          ctx.arc(px, py, 6, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      });
+    }
+
+    init().catch(e => status.textContent = 'Error: ' + e.message);
+  </script>
+</body>
+</html>

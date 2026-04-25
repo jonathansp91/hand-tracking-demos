@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Air Drums</title>
+  <link rel="stylesheet" href="_common.css" />
+</head>
+<body>
+  <nav>
+    <a href="../index.html">&#8592; Demos</a>
+    <h2>Air Drums</h2>
+  </nav>
+
+  <div class="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="fx"></canvas>
+    <div class="hud">Golpea los <span>4 pads</span><br>con tus puños/dedos<br>Velocidad = volumen</div>
+    <div class="status" id="status">Cargando...</div>
+  </div>
+
+  <script type="module">
+    import { setupHandTracker, setupCamera } from './_common.js';
+
+    const video  = document.getElementById('video');
+    const canvas = document.getElementById('fx');
+    const ctx    = canvas.getContext('2d');
+    const status = document.getElementById('status');
+
+    let audioCtx;
+    function ensureAudio() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    }
+    document.addEventListener('click', ensureAudio, { once: true });
+
+    function playKick(vol) {
+      ensureAudio();
+      const t = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.frequency.setValueAtTime(150, t);
+      osc.frequency.exponentialRampToValueAtTime(40, t + 0.15);
+      gain.gain.setValueAtTime(vol, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(t); osc.stop(t + 0.25);
+    }
+
+    function playSnare(vol) {
+      ensureAudio();
+      const t = audioCtx.currentTime;
+      const buf = audioCtx.createBuffer(1, 4096, audioCtx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      const noise = audioCtx.createBufferSource();
+      noise.buffer = buf;
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'highpass'; filter.frequency.value = 1500;
+      const gain = audioCtx.createGain();
+      gain.gain.setValueAtTime(vol, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+      noise.connect(filter).connect(gain).connect(audioCtx.destination);
+      noise.start(t); noise.stop(t + 0.2);
+    }
+
+    function playHat(vol) {
+      ensureAudio();
+      const t = audioCtx.currentTime;
+      const buf = audioCtx.createBuffer(1, 2048, audioCtx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      const noise = audioCtx.createBufferSource();
+      noise.buffer = buf;
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'highpass'; filter.frequency.value = 7000;
+      const gain = audioCtx.createGain();
+      gain.gain.setValueAtTime(vol * 0.5, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+      noise.connect(filter).connect(gain).connect(audioCtx.destination);
+      noise.start(t); noise.stop(t + 0.07);
+    }
+
+    function playTom(vol) {
+      ensureAudio();
+      const t = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.frequency.setValueAtTime(200, t);
+      osc.frequency.exponentialRampToValueAtTime(80, t + 0.2);
+      gain.gain.setValueAtTime(vol, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(t); osc.stop(t + 0.3);
+    }
+
+    const PADS = [
+      { name: 'KICK',  hue: 350, x: 0.20, y: 0.7, play: playKick },
+      { name: 'SNARE', hue: 50,  x: 0.40, y: 0.7, play: playSnare },
+      { name: 'HAT',   hue: 195, x: 0.60, y: 0.7, play: playHat },
+      { name: 'TOM',   hue: 280, x: 0.80, y: 0.7, play: playTom }
+    ];
+
+    const padState = PADS.map(() => ({ active: 0, lastTrigger: 0 }));
+    const prevPos = {}; // tip key -> {x,y,t} para velocidad
+
+    let landmarker;
+    async function init() {
+      landmarker = await setupHandTracker(2);
+      await setupCamera(video);
+      status.textContent = 'Click pantalla, luego golpea';
+      requestAnimationFrame(loop);
+    }
+
+    function loop(now) {
+      requestAnimationFrame(loop);
+      if (video.readyState < 2) return;
+
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const radius = Math.min(canvas.width, canvas.height) * 0.1;
+      const result = landmarker.detectForVideo(video, now);
+      const hands  = result.landmarks || [];
+
+      // Tomamos el tip del índice (8) y middle (12) de cada mano como baquetas
+      const stickPoints = [];
+      hands.forEach((lm, hi) => {
+        [8, 12].forEach(idx => {
+          stickPoints.push({
+            x: lm[idx].x * canvas.width,
+            y: lm[idx].y * canvas.height,
+            key: `${hi}_${idx}`
+          });
+        });
+      });
+
+      // Velocidad de cada baqueta
+      stickPoints.forEach(p => {
+        const prev = prevPos[p.key];
+        if (prev) {
+          const dt = (now - prev.t) || 16;
+          p.vy = (p.y - prev.y) / dt; // px por ms
+        } else {
+          p.vy = 0;
+        }
+        prevPos[p.key] = { x: p.x, y: p.y, t: now };
+      });
+
+      // Limpia teclas que ya no se ven
+      const activeKeys = new Set(stickPoints.map(p => p.key));
+      Object.keys(prevPos).forEach(k => { if (!activeKeys.has(k)) delete prevPos[k]; });
+
+      // Detectar hits
+      PADS.forEach((pad, i) => {
+        const px = pad.x * canvas.width;
+        const py = pad.y * canvas.height;
+        const st = padState[i];
+
+        stickPoints.forEach(p => {
+          const d = Math.hypot(p.x - px, p.y - py);
+          if (d < radius && p.vy > 0.2 && now - st.lastTrigger > 200) {
+            const vol = Math.min(0.8, 0.2 + p.vy * 0.5);
+            pad.play(vol);
+            st.active = 1;
+            st.lastTrigger = now;
+          }
+        });
+      });
+
+      // Dibujar pads
+      PADS.forEach((pad, i) => {
+        const px = pad.x * canvas.width;
+        const py = pad.y * canvas.height;
+        const st = padState[i];
+        const r  = radius * (1 + st.active * 0.3);
+
+        // Glow
+        const grad = ctx.createRadialGradient(px, py, 0, px, py, r * 1.5);
+        grad.addColorStop(0,   `hsla(${pad.hue}, 90%, 60%, ${0.5 + st.active * 0.4})`);
+        grad.addColorStop(0.7, `hsla(${pad.hue}, 90%, 50%, ${0.2 + st.active * 0.3})`);
+        grad.addColorStop(1,   `hsla(${pad.hue}, 90%, 50%, 0)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.arc(px, py, r * 1.5, 0, Math.PI * 2); ctx.fill();
+
+        // Ring
+        ctx.strokeStyle = `hsl(${pad.hue}, 90%, 65%)`;
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.stroke();
+
+        // Label invertido
+        ctx.save();
+        ctx.scale(-1, 1);
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 18px system-ui';
+        ctx.textAlign = 'center';
+        ctx.fillText(pad.name, -px, py + 6);
+        ctx.restore();
+
+        st.active *= 0.85;
+      });
+
+      // Tips
+      stickPoints.forEach(p => {
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(p.x, p.y, 7, 0, Math.PI * 2); ctx.fill();
+      });
+    }
+
+    init().catch(e => status.textContent = 'Error: ' + e.message);
+  </script>
+</body>
+</html>

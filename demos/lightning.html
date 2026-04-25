@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lightning Hands</title>
+  <link rel="stylesheet" href="_common.css" />
+</head>
+<body>
+  <nav>
+    <a href="../index.html">&#8592; Demos</a>
+    <h2>Lightning Hands</h2>
+  </nav>
+
+  <div class="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="fx"></canvas>
+    <div class="hud">Pon ambas manos<br>Los <span>rayos</span> saltan<br>entre las puntas</div>
+    <div class="status" id="status">Cargando...</div>
+  </div>
+
+  <script type="module">
+    import { setupHandTracker, setupCamera } from './_common.js';
+
+    const video  = document.getElementById('video');
+    const canvas = document.getElementById('fx');
+    const ctx    = canvas.getContext('2d');
+    const status = document.getElementById('status');
+    const TIPS   = [4, 8, 12, 16, 20];
+
+    function bolt(x1, y1, x2, y2, segments = 12, displacement = 30) {
+      const points = [{ x: x1, y: y1 }];
+      for (let i = 1; i < segments; i++) {
+        const t = i / segments;
+        const mx = x1 + (x2 - x1) * t;
+        const my = y1 + (y2 - y1) * t;
+        points.push({
+          x: mx + (Math.random() - 0.5) * displacement,
+          y: my + (Math.random() - 0.5) * displacement
+        });
+      }
+      points.push({ x: x2, y: y2 });
+      return points;
+    }
+
+    function drawBolt(points, color, width) {
+      ctx.beginPath();
+      ctx.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 20;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+
+    let landmarker;
+    async function init() {
+      landmarker = await setupHandTracker(2);
+      await setupCamera(video);
+      status.textContent = 'Pon tus manos';
+      requestAnimationFrame(loop);
+    }
+
+    function loop(now) {
+      requestAnimationFrame(loop);
+      if (video.readyState < 2) return;
+
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      // Slight fade for after-glow
+      ctx.fillStyle = 'rgba(10,10,15,0.35)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const result = landmarker.detectForVideo(video, now);
+      const hands  = result.landmarks || [];
+
+      ctx.globalCompositeOperation = 'lighter';
+
+      // Rayos entre puntas de dedos de cada mano
+      hands.forEach(lm => {
+        for (let i = 0; i < TIPS.length; i++) {
+          for (let j = i + 1; j < TIPS.length; j++) {
+            if (Math.random() > 0.4) continue;
+            const x1 = lm[TIPS[i]].x * canvas.width;
+            const y1 = lm[TIPS[i]].y * canvas.height;
+            const x2 = lm[TIPS[j]].x * canvas.width;
+            const y2 = lm[TIPS[j]].y * canvas.height;
+            const points = bolt(x1, y1, x2, y2, 8, 8);
+            drawBolt(points, '#aaccff', 1);
+            drawBolt(points, '#ffffff', 0.5);
+          }
+        }
+      });
+
+      // Rayos entre las dos manos (índice de cada una)
+      if (hands.length === 2) {
+        const a = hands[0][8];
+        const b = hands[1][8];
+        const x1 = a.x * canvas.width, y1 = a.y * canvas.height;
+        const x2 = b.x * canvas.width, y2 = b.y * canvas.height;
+
+        for (let k = 0; k < 3; k++) {
+          const pts = bolt(x1, y1, x2, y2, 20, 40);
+          drawBolt(pts, '#88ccff', 3);
+          drawBolt(pts, '#ffffff', 1);
+        }
+      }
+
+      ctx.globalCompositeOperation = 'source-over';
+    }
+
+    init().catch(e => status.textContent = 'Error: ' + e.message);
+  </script>
+</body>
+</html>

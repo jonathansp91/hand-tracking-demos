@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hadouken</title>
+  <link rel="stylesheet" href="_common.css" />
+</head>
+<body>
+  <nav>
+    <a href="../index.html">&#8592; Demos</a>
+    <h2>Hadouken</h2>
+  </nav>
+
+  <div class="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="fx"></canvas>
+    <div class="hud">
+      Junta las manos<br>= <span>cargar</span><br>
+      Sepáralas rápido<br>= <span>disparar</span>
+    </div>
+    <div class="status" id="status">Cargando...</div>
+  </div>
+
+  <script type="module">
+    import { setupHandTracker, setupCamera, dist } from './_common.js';
+
+    const video  = document.getElementById('video');
+    const canvas = document.getElementById('fx');
+    const ctx    = canvas.getContext('2d');
+    const status = document.getElementById('status');
+
+    let landmarker;
+    let charge = 0;
+    let lastDist = null;
+    const projectiles = [];
+
+    async function init() {
+      landmarker = await setupHandTracker(2);
+      await setupCamera(video);
+      status.textContent = 'Junta las manos';
+      requestAnimationFrame(loop);
+    }
+
+    function drawCharge(cx, cy, level) {
+      const r = 30 + level * 60;
+      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      grad.addColorStop(0,   `rgba(255, 230, 150, ${level})`);
+      grad.addColorStop(0.4, `rgba(255, 150, 50, ${0.7 * level})`);
+      grad.addColorStop(0.8, `rgba(200, 80, 30, ${0.3 * level})`);
+      grad.addColorStop(1,   'rgba(200, 80, 30, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+
+      // Spinning rings
+      ctx.strokeStyle = `rgba(255, 220, 100, ${0.8 * level})`;
+      ctx.lineWidth = 3;
+      const t = Date.now() * 0.005;
+      for (let i = 0; i < 2; i++) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * (0.6 + i * 0.2), t + i, t + i + Math.PI * 1.5);
+        ctx.stroke();
+      }
+    }
+
+    function drawProjectile(p) {
+      const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
+      grad.addColorStop(0,   `rgba(255, 240, 180, ${p.life})`);
+      grad.addColorStop(0.3, `rgba(255, 180, 80, ${0.8 * p.life})`);
+      grad.addColorStop(0.6, `rgba(255, 100, 30, ${0.5 * p.life})`);
+      grad.addColorStop(1,   'rgba(255, 50, 20, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+    }
+
+    function loop(now) {
+      requestAnimationFrame(loop);
+      if (video.readyState < 2) return;
+
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      ctx.fillStyle = 'rgba(10,10,15,0.25)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const result = landmarker.detectForVideo(video, now);
+      const hands  = result.landmarks || [];
+
+      ctx.globalCompositeOperation = 'lighter';
+
+      if (hands.length === 2) {
+        // Centro de cada palma
+        const c1x = ((hands[0][0].x + hands[0][9].x) / 2) * canvas.width;
+        const c1y = ((hands[0][0].y + hands[0][9].y) / 2) * canvas.height;
+        const c2x = ((hands[1][0].x + hands[1][9].x) / 2) * canvas.width;
+        const c2y = ((hands[1][0].y + hands[1][9].y) / 2) * canvas.height;
+
+        const cx = (c1x + c2x) / 2;
+        const cy = (c1y + c2y) / 2;
+        const d  = Math.hypot(c1x - c2x, c1y - c2y);
+
+        // Detección de carga: manos cerca
+        if (d < 200) {
+          charge = Math.min(1, charge + 0.025);
+          status.textContent = 'CARGANDO ' + Math.round(charge * 100) + '%';
+        } else {
+          // Detección de disparo: separación rápida tras carga alta
+          if (lastDist !== null && d - lastDist > 30 && charge > 0.5) {
+            // Dirección desde el centro hacia donde apuntan las manos (perpendicular)
+            const dx = (c2x - c1x);
+            const dy = (c2y - c1y);
+            const len = Math.hypot(dx, dy) || 1;
+            // Proyectil hacia la cámara (alejándose, scaling up)
+            projectiles.push({
+              x: cx, y: cy,
+              vx: 0, vy: 0,
+              r: 60 * charge,
+              grow: 8,
+              life: 1
+            });
+            charge = 0;
+            status.textContent = 'HADOUKEN!';
+          } else {
+            charge = Math.max(0, charge - 0.04);
+            if (charge === 0) status.textContent = 'Junta las manos';
+          }
+        }
+        lastDist = d;
+
+        if (charge > 0.05) drawCharge(cx, cy, charge);
+      } else {
+        charge = Math.max(0, charge - 0.04);
+        lastDist = null;
+        if (charge === 0 && projectiles.length === 0) status.textContent = 'Pon ambas manos';
+      }
+
+      // Update y dibujar proyectiles
+      for (let i = projectiles.length - 1; i >= 0; i--) {
+        const p = projectiles[i];
+        p.r += p.grow;
+        p.life -= 0.025;
+        if (p.life <= 0) { projectiles.splice(i, 1); continue; }
+        drawProjectile(p);
+      }
+
+      ctx.globalCompositeOperation = 'source-over';
+    }
+
+    init().catch(e => status.textContent = 'Error: ' + e.message);
+  </script>
+</body>
+</html>

@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pong</title>
+  <link rel="stylesheet" href="_common.css" />
+</head>
+<body>
+  <nav>
+    <a href="../index.html">&#8592; Demos</a>
+    <h2>Pong</h2>
+  </nav>
+
+  <div class="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="fx"></canvas>
+    <div class="hud">Mueve tu mano arriba<br>y abajo. <span>2 manos</span> =<br>jugador 1 vs jugador 2.<br>1 mano = juega vs CPU</div>
+    <div class="status" id="status">Cargando...</div>
+  </div>
+
+  <script type="module">
+    import { setupHandTracker, setupCamera } from './_common.js';
+
+    const video  = document.getElementById('video');
+    const canvas = document.getElementById('fx');
+    const ctx    = canvas.getContext('2d');
+    const status = document.getElementById('status');
+
+    const game = {
+      ball: { x: 0.5, y: 0.5, vx: 0.008, vy: 0.005, r: 0.018 },
+      left:  { y: 0.5 },
+      right: { y: 0.5 },
+      score: [0, 0],
+      paddleH: 0.18, paddleW: 0.012
+    };
+
+    function resetBall(dir = 1) {
+      game.ball.x = 0.5; game.ball.y = 0.5;
+      game.ball.vx = 0.008 * dir;
+      game.ball.vy = (Math.random() - 0.5) * 0.012;
+    }
+
+    let landmarker;
+    async function init() {
+      landmarker = await setupHandTracker(2);
+      await setupCamera(video);
+      status.textContent = 'Listo';
+      requestAnimationFrame(loop);
+    }
+
+    function loop(now) {
+      requestAnimationFrame(loop);
+      if (video.readyState < 2) return;
+
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      const result = landmarker.detectForVideo(video, now);
+      const hands  = result.landmarks || [];
+
+      // Asignación de palas: mano por X (recordando que coords no están espejadas)
+      // Ordena por X. Mano más a la izquierda en coords mediapipe = derecha en pantalla espejada.
+      const ys = hands.map(lm => ({ x: lm[0].x, y: lm[0].y }));
+      ys.sort((a, b) => a.x - b.x);
+
+      if (ys.length >= 2) {
+        // Mano con menor x (lado izq mediapipe = der pantalla) → right; mayor x → left
+        game.right.y = ys[0].y;
+        game.left.y  = ys[1].y;
+      } else if (ys.length === 1) {
+        // Una mano: jugador izquierdo (humano), CPU derecha sigue la pelota
+        game.left.y = ys[0].y;
+        const target = game.ball.y;
+        game.right.y += (target - game.right.y) * 0.07;
+      }
+
+      // Update bola
+      const b = game.ball;
+      b.x += b.vx; b.y += b.vy;
+
+      // Rebote arriba/abajo
+      if (b.y < b.r) { b.y = b.r; b.vy *= -1; }
+      if (b.y > 1 - b.r) { b.y = 1 - b.r; b.vy *= -1; }
+
+      // Colisión paletas (left at x=0.04, right at x=0.96)
+      const leftX = 0.04, rightX = 0.96;
+      if (b.x - b.r < leftX + game.paddleW && Math.abs(b.y - game.left.y) < game.paddleH / 2) {
+        b.vx = Math.abs(b.vx) * 1.04;
+        b.vy += (b.y - game.left.y) * 0.05;
+      }
+      if (b.x + b.r > rightX - game.paddleW && Math.abs(b.y - game.right.y) < game.paddleH / 2) {
+        b.vx = -Math.abs(b.vx) * 1.04;
+        b.vy += (b.y - game.right.y) * 0.05;
+      }
+
+      // Goles
+      if (b.x < 0) { game.score[1]++; resetBall(1); }
+      if (b.x > 1) { game.score[0]++; resetBall(-1); }
+
+      // === RENDER ===
+      ctx.fillStyle = 'rgba(10,10,15,0.6)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Línea central
+      ctx.strokeStyle = '#1e1e2e';
+      ctx.setLineDash([10, 10]);
+      ctx.beginPath();
+      ctx.moveTo(canvas.width / 2, 0);
+      ctx.lineTo(canvas.width / 2, canvas.height);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Score (no espejado)
+      ctx.save();
+      ctx.scale(-1, 1);
+      ctx.fillStyle = '#00d4ff';
+      ctx.font = 'bold 64px system-ui';
+      ctx.textAlign = 'center';
+      // Player 1 (izquierdo en pantalla) score
+      ctx.fillText(game.score[0], -(canvas.width * 0.25), 80);
+      ctx.fillStyle = '#ff4488';
+      ctx.fillText(game.score[1], -(canvas.width * 0.75), 80);
+      ctx.restore();
+
+      // Paletas
+      const pw = game.paddleW * canvas.width;
+      const ph = game.paddleH * canvas.height;
+
+      ctx.shadowColor = '#00d4ff';
+      ctx.shadowBlur = 20;
+      ctx.fillStyle = '#00d4ff';
+      ctx.fillRect(leftX * canvas.width, (game.left.y - game.paddleH / 2) * canvas.height, pw, ph);
+
+      ctx.shadowColor = '#ff4488';
+      ctx.fillStyle = '#ff4488';
+      ctx.fillRect((rightX - game.paddleW) * canvas.width, (game.right.y - game.paddleH / 2) * canvas.height, pw, ph);
+
+      // Bola
+      ctx.shadowColor = '#fff';
+      ctx.shadowBlur = 25;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(b.x * canvas.width, b.y * canvas.height, b.r * canvas.height, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    init().catch(e => status.textContent = 'Error: ' + e.message);
+  </script>
+</body>
+</html>

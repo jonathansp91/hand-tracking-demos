@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Iron Man Repulsor</title>
+  <link rel="stylesheet" href="_common.css" />
+  <style>
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="../index.html">&#8592; Demos</a>
+    <h2>Iron Man Repulsor</h2>
+  </nav>
+
+  <div class="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="fx"></canvas>
+    <div class="hud">Abre la palma<br>hacia la cámara<br><span>5 dedos = full power</span></div>
+    <div class="status" id="status">Cargando...</div>
+  </div>
+
+  <script type="module">
+    import { setupHandTracker, setupCamera, fingersUp, dist } from './_common.js';
+
+    const video  = document.getElementById('video');
+    const canvas = document.getElementById('fx');
+    const ctx    = canvas.getContext('2d');
+    const status = document.getElementById('status');
+
+    let landmarker, time = 0;
+
+    async function init() {
+      landmarker = await setupHandTracker(2);
+      await setupCamera(video);
+      status.textContent = 'Abre la palma';
+      requestAnimationFrame(loop);
+    }
+
+    function drawRepulsor(cx, cy, radius, power) {
+      const t = time * 0.05;
+
+      // Outer glow
+      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius * 2.5);
+      grad.addColorStop(0,    `rgba(180, 220, 255, ${0.9 * power})`);
+      grad.addColorStop(0.3,  `rgba(100, 180, 255, ${0.6 * power})`);
+      grad.addColorStop(0.6,  `rgba(50, 120, 255, ${0.3 * power})`);
+      grad.addColorStop(1,    'rgba(50, 120, 255, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(cx, cy, radius * 2.5, 0, Math.PI * 2); ctx.fill();
+
+      // Core white
+      const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius * 0.6);
+      core.addColorStop(0, `rgba(255, 255, 255, ${power})`);
+      core.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      ctx.fillStyle = core;
+      ctx.beginPath(); ctx.arc(cx, cy, radius * 0.6, 0, Math.PI * 2); ctx.fill();
+
+      // Energy rings
+      ctx.strokeStyle = `rgba(180, 220, 255, ${0.7 * power})`;
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 3; i++) {
+        const r = radius * (0.8 + i * 0.4) * (1 + Math.sin(t + i) * 0.05);
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+      }
+
+      // Energy beams shooting out
+      ctx.strokeStyle = `rgba(150, 200, 255, ${0.5 * power})`;
+      ctx.lineWidth = 1.5;
+      for (let i = 0; i < 8; i++) {
+        const a   = (i / 8) * Math.PI * 2 + t;
+        const r1  = radius * 1.2;
+        const r2  = radius * (2 + Math.sin(t * 2 + i) * 0.5);
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+        ctx.lineTo(cx + Math.cos(a) * r2, cy + Math.sin(a) * r2);
+        ctx.stroke();
+      }
+    }
+
+    function loop(now) {
+      requestAnimationFrame(loop);
+      if (video.readyState < 2) return;
+      time++;
+
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const result = landmarker.detectForVideo(video, now);
+      const hands  = result.landmarks || [];
+
+      hands.forEach(lm => {
+        const fu = fingersUp(lm);
+        const openCount = fu.filter(Boolean).length;
+        const power = openCount / 5;
+
+        if (power > 0.4) {
+          // Centro de la palma = promedio de wrist + MCPs
+          const cx = ((lm[0].x + lm[5].x + lm[9].x + lm[13].x + lm[17].x) / 5) * canvas.width;
+          const cy = ((lm[0].y + lm[5].y + lm[9].y + lm[13].y + lm[17].y) / 5) * canvas.height;
+          const palmSize = dist(lm[0], lm[9]) * canvas.width;
+
+          ctx.globalCompositeOperation = 'lighter';
+          drawRepulsor(cx, cy, palmSize * 0.55, power);
+          ctx.globalCompositeOperation = 'source-over';
+        }
+      });
+    }
+
+    init().catch(e => status.textContent = 'Error: ' + e.message);
+  </script>
+</body>
+</html>

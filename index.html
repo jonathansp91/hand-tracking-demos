@@ -36,11 +36,22 @@
       font-size: 0.95rem;
     }
 
+    .section-title {
+      max-width: 1100px;
+      margin: 1.5rem auto 0;
+      padding: 0 2rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      letter-spacing: 1px;
+      color: #444;
+      text-transform: uppercase;
+    }
+
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 1.5rem;
-      padding: 2rem;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1rem;
+      padding: 1rem 2rem;
       max-width: 1100px;
       margin: 0 auto;
     }
@@ -106,29 +117,90 @@
     <p>MediaPipe.js &middot; Corre 100% en tu browser &middot; Sin instalaci&oacute;n</p>
   </header>
 
+  <h3 class="section-title">Tracking</h3>
   <div class="grid">
-
     <a class="card" href="demos/visualizer.html">
       <div class="card-icon">✋</div>
       <h2>Hand Visualizer</h2>
-      <p>Ve los 21 puntos de tu mano en tiempo real. Skeleton, landmarks y detecci&oacute;n de hasta 2 manos simult&aacute;neas.</p>
-      <span class="badge">Demo 1</span>
+      <p>21 landmarks + skeleton de hasta 2 manos en tiempo real con FPS counter.</p>
+      <span class="badge">Tracking</span>
     </a>
 
     <a class="card" href="demos/finger-counter.html">
       <div class="card-icon">🖐</div>
       <h2>Finger Counter</h2>
-      <p>Cuenta los dedos levantados en tiempo real y reconoce gestos: pulgar arriba, paz, rock, ok y m&aacute;s.</p>
-      <span class="badge">Demo 2</span>
+      <p>Cuenta dedos y reconoce 7 gestos: paz, rock, pulgar arriba, pistola, llamame y m&aacute;s.</p>
+      <span class="badge">Tracking</span>
+    </a>
+  </div>
+
+  <h3 class="section-title">Efectos visuales</h3>
+  <div class="grid">
+    <a class="card" href="demos/particle-trail.html">
+      <div class="card-icon">✨</div>
+      <h2>Particle Trail</h2>
+      <p>Cada punta de dedo deja una estela de part&iacute;culas brillantes. Hasta 2 manos.</p>
+      <span class="badge">FX</span>
     </a>
 
+    <a class="card" href="demos/repulsor.html">
+      <div class="card-icon">🔵</div>
+      <h2>Iron Man Repulsor</h2>
+      <p>Plasma azul en tu palma cuando la abres a la c&aacute;mara. M&aacute;s dedos = m&aacute;s power.</p>
+      <span class="badge">FX</span>
+    </a>
+
+    <a class="card" href="demos/lightning.html">
+      <div class="card-icon">⚡</div>
+      <h2>Lightning Hands</h2>
+      <p>Rayos el&eacute;ctricos saltan entre las puntas de tus dedos y entre tus dos manos.</p>
+      <span class="badge">FX</span>
+    </a>
+
+    <a class="card" href="demos/hadouken.html">
+      <div class="card-icon">🔥</div>
+      <h2>Hadouken</h2>
+      <p>Junta las manos para cargar energ&iacute;a. Sep&aacute;ralas r&aacute;pido para disparar.</p>
+      <span class="badge">FX</span>
+    </a>
+
+    <a class="card" href="demos/xray.html">
+      <div class="card-icon">🦴</div>
+      <h2>X-Ray Vision</h2>
+      <p>Ve los "huesos" brillantes de tu mano con visi&oacute;n de rayos X.</p>
+      <span class="badge">FX</span>
+    </a>
+  </div>
+
+  <h3 class="section-title">Interactivos</h3>
+  <div class="grid">
     <a class="card" href="demos/air-canvas.html">
       <div class="card-icon">✏️</div>
       <h2>Air Canvas</h2>
-      <p>Dibuja en el aire con tu dedo &iacute;ndice. Cambia colores con gestos. Pu&ntilde;o cerrado para borrar.</p>
-      <span class="badge">Demo 3</span>
+      <p>Dibuja en el aire con tu &iacute;ndice. 6 colores. Pu&ntilde;o cerrado borra.</p>
+      <span class="badge">Interactivo</span>
     </a>
 
+    <a class="card" href="demos/piano.html">
+      <div class="card-icon">🎹</div>
+      <h2>Hand Piano</h2>
+      <p>5 teclas flotantes. Tocar con cualquier dedo. Mano arriba = octava +1.</p>
+      <span class="badge">Audio</span>
+    </a>
+
+    <a class="card" href="demos/drums.html">
+      <div class="card-icon">🥁</div>
+      <h2>Air Drums</h2>
+      <p>Kick, snare, hat y tom flotando en el aire. Velocidad del golpe = volumen.</p>
+      <span class="badge">Audio</span>
+    </a>
+
+    <a class="card" href="demos/pong.html">
+      <div class="card-icon">🏓</div>
+      <h2>Pong</h2>
+      <p>El cl&aacute;sico Pong con tu mano como pala. 1 mano vs CPU, 2 manos = duelo.</p>
+      <span class="badge">Juego</span>
+    </a>
   </div>
 
   <footer>Powered by MediaPipe Tasks Vision &middot; jonathansp91</footer>

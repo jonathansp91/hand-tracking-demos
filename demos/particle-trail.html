@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Particle Trail</title>
+  <link rel="stylesheet" href="_common.css" />
+</head>
+<body>
+  <nav>
+    <a href="../index.html">&#8592; Demos</a>
+    <h2>Particle Trail</h2>
+  </nav>
+
+  <div class="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="fx"></canvas>
+    <div class="hud">Mueve los dedos<br>Cada punta deja<br>una <span>estela</span> de partículas</div>
+    <div class="status" id="status">Cargando...</div>
+  </div>
+
+  <script type="module">
+    import { setupHandTracker, setupCamera } from './_common.js';
+
+    const video  = document.getElementById('video');
+    const canvas = document.getElementById('fx');
+    const ctx    = canvas.getContext('2d');
+    const status = document.getElementById('status');
+
+    const TIPS   = [4, 8, 12, 16, 20];
+    const HUES   = [340, 195, 270, 50, 130];
+    const particles = [];
+
+    function emit(x, y, hue) {
+      for (let i = 0; i < 3; i++) {
+        particles.push({
+          x, y,
+          vx: (Math.random() - 0.5) * 1.5,
+          vy: (Math.random() - 0.5) * 1.5 - 0.5,
+          life: 1,
+          size: 4 + Math.random() * 6,
+          hue
+        });
+      }
+    }
+
+    function tickParticles() {
+      ctx.globalCompositeOperation = 'lighter';
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx; p.y += p.vy;
+        p.life -= 0.018;
+        p.size *= 0.97;
+        if (p.life <= 0) { particles.splice(i, 1); continue; }
+        const alpha = p.life * 0.8;
+        ctx.fillStyle = `hsla(${p.hue}, 100%, 65%, ${alpha})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    }
+
+    let landmarker;
+    async function init() {
+      landmarker = await setupHandTracker(2);
+      await setupCamera(video);
+      status.textContent = 'Mueve tu mano';
+      requestAnimationFrame(loop);
+    }
+
+    function loop(now) {
+      requestAnimationFrame(loop);
+      if (video.readyState < 2) return;
+
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      // Fade trails (composición transparente para crear el trail effect)
+      ctx.fillStyle = 'rgba(10,10,15,0.18)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const result = landmarker.detectForVideo(video, now);
+      const hands = result.landmarks || [];
+
+      hands.forEach(lm => {
+        TIPS.forEach((t, i) => {
+          emit(lm[t].x * canvas.width, lm[t].y * canvas.height, HUES[i]);
+        });
+      });
+
+      tickParticles();
+    }
+
+    init().catch(e => status.textContent = 'Error: ' + e.message);
+  </script>
+</body>
+</html>

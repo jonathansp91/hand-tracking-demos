@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>X-Ray Vision</title>
+  <link rel="stylesheet" href="_common.css" />
+  <style>
+    #fx { mix-blend-mode: screen; }
+    #video { filter: brightness(0.4) contrast(1.2); }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="../index.html">&#8592; Demos</a>
+    <h2>X-Ray Vision</h2>
+  </nav>
+
+  <div class="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="fx"></canvas>
+    <div class="hud">Visión de <span>rayos X</span><br>en tu mano</div>
+    <div class="status" id="status">Cargando...</div>
+  </div>
+
+  <script type="module">
+    import { setupHandTracker, setupCamera, HAND_CONNECTIONS } from './_common.js';
+
+    const video  = document.getElementById('video');
+    const canvas = document.getElementById('fx');
+    const ctx    = canvas.getContext('2d');
+    const status = document.getElementById('status');
+
+    let landmarker;
+    async function init() {
+      landmarker = await setupHandTracker(2);
+      await setupCamera(video);
+      status.textContent = 'Muestra tu mano';
+      requestAnimationFrame(loop);
+    }
+
+    function drawBone(x1, y1, x2, y2, thickness) {
+      // Glow exterior
+      ctx.strokeStyle = 'rgba(150, 220, 255, 0.4)';
+      ctx.lineWidth = thickness * 2.5;
+      ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+
+      // Bone color blanco-azulado
+      ctx.strokeStyle = '#e0f0ff';
+      ctx.lineWidth = thickness;
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    }
+
+    function drawJoint(x, y, r) {
+      const grad = ctx.createRadialGradient(x, y, 0, x, y, r * 2);
+      grad.addColorStop(0,   '#ffffff');
+      grad.addColorStop(0.4, '#aaccff');
+      grad.addColorStop(1,   'rgba(150, 200, 255, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(x, y, r * 2, 0, Math.PI * 2); ctx.fill();
+    }
+
+    function loop(now) {
+      requestAnimationFrame(loop);
+      if (video.readyState < 2) return;
+
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const result = landmarker.detectForVideo(video, now);
+      const hands  = result.landmarks || [];
+
+      hands.forEach(lm => {
+        // Huesos (connections)
+        HAND_CONNECTIONS.forEach(([a, b]) => {
+          drawBone(
+            lm[a].x * canvas.width, lm[a].y * canvas.height,
+            lm[b].x * canvas.width, lm[b].y * canvas.height,
+            6
+          );
+        });
+        // Articulaciones (joints más brillantes)
+        lm.forEach((pt, i) => {
+          drawJoint(
+            pt.x * canvas.width,
+            pt.y * canvas.height,
+            i === 0 ? 8 : 5
+          );
+        });
+      });
+    }
+
+    init().catch(e => status.textContent = 'Error: ' + e.message);
+  </script>
+</body>
+</html>
