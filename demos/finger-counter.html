@@ -113,29 +113,36 @@
       [0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17]
     ];
 
-    function countFingers(lm) {
+    // Pulgar usa distancia al wrist: si tip está más lejos que IP, está extendido.
+    // Más robusto que comparar X porque no depende de left/right hand ni orientación.
+    function dist(a, b) {
+      const dx = a.x - b.x, dy = a.y - b.y;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function thumbExtended(lm) {
+      const wrist  = lm[0];
+      const tipD   = dist(lm[4], wrist);
+      const ipD    = dist(lm[3], wrist);
+      const mcpD   = dist(lm[2], wrist);
+      // Tip más lejos que IP y MCP → pulgar extendido
+      return tipD > ipD * 1.05 && tipD > mcpD * 1.1;
+    }
+
+    function fingersUp(lm) {
       const tips   = [4, 8, 12, 16, 20];
       const joints = [3, 6, 10, 14, 18];
-      let count = 0;
+      const up = [thumbExtended(lm)];
+      for (let i = 1; i < 5; i++) up.push(lm[tips[i]].y < lm[joints[i]].y);
+      return up;
+    }
 
-      // Pulgar: comparar x (horizontal)
-      const thumbUp = lm[4].x < lm[3].x;
-      if (thumbUp) count++;
-
-      // Otros 4 dedos: y del tip < y del joint (arriba en coords de imagen)
-      for (let i = 1; i < 5; i++) {
-        if (lm[tips[i]].y < lm[joints[i]].y) count++;
-      }
-      return count;
+    function countFingers(lm) {
+      return fingersUp(lm).filter(Boolean).length;
     }
 
     function detectGesture(lm, count) {
-      const tips   = [4, 8, 12, 16, 20];
-      const joints = [3, 6, 10, 14, 18];
-      const up = tips.map((t, i) =>
-        i === 0 ? lm[t].x < lm[joints[i]].x : lm[t].y < lm[joints[i]].y
-      );
-
+      const up = fingersUp(lm);
       if (count === 0)  return 'Puno cerrado';
       if (count === 5)  return 'Mano abierta';
       if (up[0] && !up[1] && !up[2] && !up[3] && !up[4]) return 'Pulgar arriba';
@@ -143,6 +150,7 @@
       if (!up[0] && up[1] && !up[2] && !up[3] && up[4]) return 'Rock & Roll';
       if (!up[0] && up[1] && !up[2] && !up[3] && !up[4]) return 'Apuntando';
       if (up[0] && up[1] && !up[2] && !up[3] && !up[4]) return 'Pistola';
+      if (up[0] && !up[1] && !up[2] && !up[3] && up[4]) return 'Llamame';
       return '';
     }
 

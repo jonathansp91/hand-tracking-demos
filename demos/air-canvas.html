@@ -150,10 +150,12 @@
       const middleUp = isFingerUp(lm, 12, 10);
       const ringUp   = isFingerUp(lm, 16, 14);
       const pinkyUp  = isFingerUp(lm, 20, 18);
-      const thumbUp  = lm[4].x < lm[3].x;
 
+      // Palma abierta = pausa
       if (indexUp && middleUp && ringUp && pinkyUp) return 'pause';
+      // Sin dedos arriba = borrar
       if (!indexUp && !middleUp && !ringUp && !pinkyUp) return 'erase';
+      // Solo índice arriba = dibujar
       if (indexUp && !middleUp) return 'draw';
       return 'pause';
     }
