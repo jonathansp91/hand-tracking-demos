@@ -121,12 +121,12 @@
     }
 
     function thumbExtended(lm) {
-      const wrist  = lm[0];
-      const tipD   = dist(lm[4], wrist);
-      const ipD    = dist(lm[3], wrist);
-      const mcpD   = dist(lm[2], wrist);
-      // Tip más lejos que IP y MCP → pulgar extendido
-      return tipD > ipD * 1.05 && tipD > mcpD * 1.1;
+      // Distancia del thumb tip al index MCP, normalizada por ancho de palma
+      // Puño: thumb tip pegado al nudillo del índice → ratio bajo
+      // Extendido: thumb tip lejos lateralmente → ratio alto
+      const palmWidth    = dist(lm[5], lm[17]);
+      const thumbToIndex = dist(lm[4], lm[5]);
+      return thumbToIndex / palmWidth > 0.7;
     }
 
     function fingersUp(lm) {
