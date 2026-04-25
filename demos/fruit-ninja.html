@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fruit Ninja</title>
+  <link rel="stylesheet" href="_common.css" />
+  <style>
+    .score-board {
+      position: absolute; top: 1rem; left: 50%;
+      transform: translateX(-50%);
+      background: #0a0a0fcc; border: 1px solid #00d4ff44;
+      border-radius: 12px; padding: 0.6rem 1.5rem;
+      font-size: 1.1rem; font-weight: 700;
+      backdrop-filter: blur(8px);
+      display: flex; gap: 1.5rem;
+    }
+    .score-board span { color: #00d4ff; }
+    .lives { color: #ff4488; }
+    .game-over {
+      position: absolute; inset: 0;
+      display: none;
+      flex-direction: column; gap: 1rem;
+      align-items: center; justify-content: center;
+      background: rgba(10,10,15,0.85); backdrop-filter: blur(8px);
+      z-index: 10;
+    }
+    .game-over h1 { font-size: 4rem; color: #ff4488; }
+    .game-over button {
+      background: #00d4ff; color: #000;
+      border: none; padding: 0.75rem 2rem;
+      border-radius: 8px; font-size: 1rem; font-weight: 600;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="../index.html">&#8592; Demos</a>
+    <h2>Fruit Ninja</h2>
+  </nav>
+
+  <div class="stage" id="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="fx"></canvas>
+
+    <div class="score-board">
+      <div>Score: <span id="score">0</span></div>
+      <div class="lives">Vidas: <span id="lives">3</span></div>
+    </div>
+
+    <div class="game-over" id="gameOver">
+      <h1>GAME OVER</h1>
+      <p style="color:#aaa">Score final: <span id="finalScore" style="color:#fff">0</span></p>
+      <button id="restartBtn">Jugar de nuevo</button>
+    </div>
+
+    <div class="status" id="status">Cargando...</div>
+  </div>
+
+  <script type="module">
+    import { setupHandTracker, setupCamera } from './_common.js';
+
+    const video  = document.getElementById('video');
+    const canvas = document.getElementById('fx');
+    const ctx    = canvas.getContext('2d');
+    const status = document.getElementById('status');
+    const scoreEl = document.getElementById('score');
+    const livesEl = document.getElementById('lives');
+    const gameOverEl = document.getElementById('gameOver');
+    const finalScoreEl = document.getElementById('finalScore');
+
+    const FRUITS = [
+      { emoji: '🍎', name: 'apple',      color: '#ff4444' },
+      { emoji: '🍊', name: 'orange',     color: '#ff8833' },
+      { emoji: '🍋', name: 'lemon',      color: '#ffcc00' },
+      { emoji: '🍉', name: 'watermelon', color: '#88ff66' },
+      { emoji: '🍇', name: 'grapes',     color: '#aa66ff' },
+      { emoji: '🍓', name: 'strawberry', color: '#ff3366' },
+      { emoji: '🍑', name: 'peach',      color: '#ffaa88' }
+    ];
+
+    const fruits = [];
+    const slashes = []; // estela del corte
+    const splashes = []; // particulas de fruta cortada
+    const prevTipPos = {}; // por tip
+    let score = 0, lives = 3, gameRunning = true;
+    let nextSpawn = 0;
+
+    function spawn(now) {
+      // Spawn frutas o bombas
+      const isBomb = Math.random() < 0.12;
+      const fruit = FRUITS[Math.floor(Math.random() * FRUITS.length)];
+      fruits.push({
+        x: Math.random() * canvas.width,
+        y: canvas.height + 50,
+        vx: (Math.random() - 0.5) * 4,
+        vy: -(canvas.height * 0.022 + Math.random() * 6),
+        rot: 0,
+        rotSpeed: (Math.random() - 0.5) * 0.1,
+        size: 60 + Math.random() * 30,
+        emoji: isBomb ? '💣' : fruit.emoji,
+        color: isBomb ? '#222' : fruit.color,
+        bomb: isBomb,
+        sliced: false
+      });
+    }
+
+    function slashFruit(f) {
+      f.sliced = true;
+      // Splash de partículas
+      for (let i = 0; i < 20; i++) {
+        splashes.push({
+          x: f.x, y: f.y,
+          vx: (Math.random() - 0.5) * 8,
+          vy: (Math.random() - 0.5) * 8 - 2,
+          size: 4 + Math.random() * 6,
+          color: f.color,
+          life: 1
+        });
+      }
+      if (f.bomb) {
+        lives--;
+        livesEl.textContent = lives;
+        if (lives <= 0) endGame();
+      } else {
+        score += 10;
+        scoreEl.textContent = score;
+      }
+    }
+
+    function endGame() {
+      gameRunning = false;
+      finalScoreEl.textContent = score;
+      gameOverEl.style.display = 'flex';
+    }
+
+    document.getElementById('restartBtn').onclick = () => {
+      score = 0; lives = 3; gameRunning = true;
+      fruits.length = 0; splashes.length = 0; slashes.length = 0;
+      scoreEl.textContent = 0; livesEl.textContent = 3;
+      gameOverEl.style.display = 'none';
+      nextSpawn = performance.now();
+    };
+
+    let landmarker;
+    async function init() {
+      landmarker = await setupHandTracker(2);
+      await setupCamera(video);
+      status.textContent = '';
+      requestAnimationFrame(loop);
+    }
+
+    function loop(now) {
+      requestAnimationFrame(loop);
+      if (video.readyState < 2) return;
+
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.fillStyle = 'rgba(10,10,15,0.4)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const result = landmarker.detectForVideo(video, now);
+      const hands  = result.landmarks || [];
+
+      // Trackear todos los fingertips para corte
+      const TIPS = [4, 8, 12, 16, 20];
+      const cutters = [];
+      hands.forEach((lm, hi) => {
+        TIPS.forEach(t => {
+          const x = lm[t].x * canvas.width;
+          const y = lm[t].y * canvas.height;
+          const key = `${hi}_${t}`;
+          const prev = prevTipPos[key];
+          if (prev) {
+            const speed = Math.hypot(x - prev.x, y - prev.y);
+            cutters.push({ x, y, prevX: prev.x, prevY: prev.y, speed });
+          }
+          prevTipPos[key] = { x, y };
+        });
+      });
+
+      // Limpia tips no detectados
+      const liveKeys = new Set();
+      hands.forEach((lm, hi) => TIPS.forEach(t => liveKeys.add(`${hi}_${t}`)));
+      Object.keys(prevTipPos).forEach(k => { if (!liveKeys.has(k)) delete prevTipPos[k]; });
+
+      // Spawn
+      if (gameRunning && now >= nextSpawn) {
+        spawn(now);
+        nextSpawn = now + 600 + Math.random() * 400;
+      }
+
+      // Update frutas
+      for (let i = fruits.length - 1; i >= 0; i--) {
+        const f = fruits[i];
+        if (f.sliced) { fruits.splice(i, 1); continue; }
+        f.x += f.vx;
+        f.y += f.vy;
+        f.vy += 0.4; // gravedad
+        f.rot += f.rotSpeed;
+
+        // Si cae fuera de pantalla
+        if (f.y > canvas.height + 100) {
+          if (!f.bomb && gameRunning) {
+            lives--;
+            livesEl.textContent = lives;
+            if (lives <= 0) endGame();
+          }
+          fruits.splice(i, 1);
+          continue;
+        }
+
+        // Detección de corte: si algún cutter rápido pasa cerca
+        if (gameRunning) {
+          for (const c of cutters) {
+            if (c.speed < 12) continue; // Mínimo de velocidad
+            // Distancia del centro de la fruta al segmento prev->actual
+            const dx = c.x - c.prevX, dy = c.y - c.prevY;
+            const lenSq = dx * dx + dy * dy;
+            const t = Math.max(0, Math.min(1, ((f.x - c.prevX) * dx + (f.y - c.prevY) * dy) / lenSq));
+            const px = c.prevX + dx * t, py = c.prevY + dy * t;
+            const d = Math.hypot(f.x - px, f.y - py);
+            if (d < f.size * 0.6) { slashFruit(f); break; }
+          }
+        }
+
+        // Render fruta
+        ctx.save();
+        // Espejado: fruta siempre legible (no espejada)
+        ctx.translate(f.x, f.y);
+        ctx.scale(-1, 1);
+        ctx.rotate(f.rot);
+        ctx.font = `${f.size}px serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(f.emoji, 0, 0);
+        ctx.restore();
+      }
+
+      // Update splashes
+      for (let i = splashes.length - 1; i >= 0; i--) {
+        const s = splashes[i];
+        s.x += s.vx;
+        s.y += s.vy;
+        s.vy += 0.3;
+        s.life -= 0.025;
+        if (s.life <= 0) { splashes.splice(i, 1); continue; }
+        ctx.fillStyle = s.color;
+        ctx.globalAlpha = s.life;
+        ctx.beginPath(); ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      // Estela de corte (slash)
+      cutters.forEach(c => {
+        if (c.speed > 12) {
+          slashes.push({ x1: c.prevX, y1: c.prevY, x2: c.x, y2: c.y, life: 1 });
+        }
+      });
+      ctx.lineCap = 'round';
+      for (let i = slashes.length - 1; i >= 0; i--) {
+        const s = slashes[i];
+        s.life -= 0.06;
+        if (s.life <= 0) { slashes.splice(i, 1); continue; }
+        ctx.strokeStyle = `rgba(255,255,255,${s.life})`;
+        ctx.lineWidth = 6 * s.life;
+        ctx.shadowColor = '#00d4ff';
+        ctx.shadowBlur = 15;
+        ctx.beginPath();
+        ctx.moveTo(s.x1, s.y1);
+        ctx.lineTo(s.x2, s.y2);
+        ctx.stroke();
+      }
+      ctx.shadowBlur = 0;
+    }
+
+    init().catch(e => status.textContent = 'Error: ' + e.message);
+  </script>
+</body>
+</html>

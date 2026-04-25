@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Theremin</title>
+  <link rel="stylesheet" href="_common.css" />
+</head>
+<body>
+  <nav>
+    <a href="../index.html">&#8592; Demos</a>
+    <h2>Theremin</h2>
+  </nav>
+
+  <div class="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="fx"></canvas>
+    <div class="hud">
+      <span>Mano izquierda</span> = pitch (sube/baja)<br>
+      <span>Mano derecha</span> = volumen (sube/baja)<br>
+      Click pantalla para activar audio
+    </div>
+    <div class="status" id="status">Cargando...</div>
+  </div>
+
+  <script type="module">
+    import { setupHandTracker, setupCamera } from './_common.js';
+
+    const video  = document.getElementById('video');
+    const canvas = document.getElementById('fx');
+    const ctx    = canvas.getContext('2d');
+    const status = document.getElementById('status');
+
+    let audioCtx, osc, gain, analyser, dataArray;
+    let currentFreq = 440, currentVol = 0;
+
+    function startAudio() {
+      if (audioCtx) return;
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      osc = audioCtx.createOscillator();
+      gain = audioCtx.createGain();
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 2048;
+      dataArray = new Uint8Array(analyser.fftSize);
+
+      osc.type = 'sine';
+      osc.frequency.value = 440;
+      gain.gain.value = 0;
+      osc.connect(gain).connect(analyser).connect(audioCtx.destination);
+      osc.start();
+    }
+
+    document.addEventListener('click', startAudio, { once: true });
+
+    let landmarker;
+    async function init() {
+      landmarker = await setupHandTracker(2);
+      await setupCamera(video);
+      status.textContent = 'Click pantalla y mueve tus manos';
+      requestAnimationFrame(loop);
+    }
+
+    function loop(now) {
+      requestAnimationFrame(loop);
+      if (video.readyState < 2) return;
+
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      // Slight fade
+      ctx.fillStyle = 'rgba(10,10,15,0.18)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const result = landmarker.detectForVideo(video, now);
+      const hands  = result.landmarks || [];
+
+      // Identificar mano izquierda y derecha por X (recordando que coords no espejan)
+      // En coords mediapipe: menor x = más a la izquierda en imagen original = más a la derecha en pantalla espejada
+      let leftHand = null, rightHand = null;
+      if (hands.length === 1) {
+        // Una sola mano, decidir por X centro
+        if (hands[0][0].x < 0.5) rightHand = hands[0];
+        else leftHand = hands[0];
+      } else if (hands.length >= 2) {
+        const sorted = [...hands].sort((a, b) => a[0].x - b[0].x);
+        rightHand = sorted[0]; // menor x = derecha en pantalla espejada
+        leftHand  = sorted[1];
+      }
+
+      // Pitch desde altura de mano IZQUIERDA en pantalla (= rightHand en coords)
+      // Volumen desde altura de mano DERECHA en pantalla (= leftHand en coords)
+      // Pero conceptualmente quiero: izquierda en pantalla = pitch, derecha en pantalla = volumen
+      // En coords mediapipe espejadas: izquierda pantalla = X mayor; derecha pantalla = X menor
+      // Reasignamos:
+      const pitchHand = leftHand;  // X mayor en coords = izquierda visual
+      const volHand   = rightHand; // X menor en coords = derecha visual
+
+      if (pitchHand) {
+        // y va de 0 (arriba) a 1 (abajo). Pitch alto = arriba = y bajo
+        const y = pitchHand[8].y; // index tip
+        const minF = 110, maxF = 1320; // dos octavas
+        currentFreq = minF * Math.pow(maxF / minF, 1 - y);
+        if (osc) osc.frequency.setTargetAtTime(currentFreq, audioCtx.currentTime, 0.02);
+      }
+
+      if (volHand) {
+        const y = volHand[8].y;
+        currentVol = Math.max(0, Math.min(0.4, (1 - y) * 0.4));
+        if (gain) gain.gain.setTargetAtTime(currentVol, audioCtx.currentTime, 0.02);
+      } else {
+        if (gain) gain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.05);
+      }
+
+      // Visualización de onda
+      if (analyser && audioCtx && audioCtx.state === 'running') {
+        analyser.getByteTimeDomainData(dataArray);
+        const sliceWidth = canvas.width / dataArray.length;
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = `hsla(${(currentFreq - 110) / 1210 * 280}, 100%, 65%, 0.9)`;
+        ctx.shadowColor = ctx.strokeStyle;
+        ctx.shadowBlur = 15;
+        ctx.beginPath();
+        for (let i = 0; i < dataArray.length; i++) {
+          const v = dataArray[i] / 128.0;
+          const y = (v * canvas.height) / 2;
+          const x = i * sliceWidth;
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+
+      // Indicadores
+      ctx.font = 'bold 16px system-ui';
+      ctx.save();
+      ctx.scale(-1, 1);
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#00d4ff';
+      ctx.fillText(`Pitch: ${currentFreq.toFixed(0)} Hz`, -canvas.width + 20, 30);
+      ctx.fillStyle = '#ff4488';
+      ctx.fillText(`Vol: ${(currentVol * 100).toFixed(0)}%`, -canvas.width + 20, 55);
+      ctx.restore();
+
+      // Crosshairs en cada mano
+      ctx.globalCompositeOperation = 'lighter';
+      if (pitchHand) {
+        const x = pitchHand[8].x * canvas.width;
+        const y = pitchHand[8].y * canvas.height;
+        ctx.strokeStyle = '#00d4ff'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(x, y, 30, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2);
+        ctx.fillStyle = '#00d4ff'; ctx.fill();
+      }
+      if (volHand) {
+        const x = volHand[8].x * canvas.width;
+        const y = volHand[8].y * canvas.height;
+        ctx.strokeStyle = '#ff4488'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(x, y, 30, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2);
+        ctx.fillStyle = '#ff4488'; ctx.fill();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    }
+
+    init().catch(e => status.textContent = 'Error: ' + e.message);
+  </script>
+</body>
+</html>
