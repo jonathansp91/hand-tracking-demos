@@ -159,6 +159,7 @@
         numHands: 2
       });
       await startCam();
+      await checkCameras();
       status.textContent = 'Muestra tu mano';
       requestAnimationFrame(detect);
     }
@@ -172,9 +173,23 @@
       await new Promise(r => video.onloadedmetadata = r);
     }
 
+    async function checkCameras() {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cams = devices.filter(d => d.kind === 'videoinput');
+      if (cams.length < 2) camBtn.style.display = 'none';
+    }
+
     camBtn.onclick = async () => {
+      const prev = facingMode;
       facingMode = facingMode === 'user' ? 'environment' : 'user';
-      await startCam();
+      try {
+        await startCam();
+      } catch (e) {
+        facingMode = prev;
+        await startCam();
+        status.textContent = 'No hay otra camara';
+        setTimeout(() => status.textContent = '', 2000);
+      }
     };
 
     function detect(now) {
